@@ -7,7 +7,7 @@ import subprocess
 import h5py
 import weaviate
 import loguru
-
+import numpy as np
 
 def add_batch(client, c, vector_len):
     '''Adds batch to Weaviate and returns
@@ -33,31 +33,6 @@ def handle_results(results):
                     loguru.logger.error(message['message'])
 
 
-def match_results(test_set, weaviate_result_set, k):
-    '''Match the reults from Weaviate to the benchmark data.
-       If a result is in the returned set, score goes +1.
-       Because there is checked for 100 neighbors a score
-       of 100 == perfect'''
-
-    # set score
-    score = 0
-
-    # return if no result
-    if weaviate_result_set['data']['Get']['Benchmark'] == None:
-        return score
-
-    # create array from Weaviate result
-    weaviate_result_array = []
-    for weaviate_result in weaviate_result_set['data']['Get']['Benchmark'][:k]:
-        weaviate_result_array.append(weaviate_result['counter'])
-
-    # match scores
-    for nn in test_set[:k]:
-        if nn in weaviate_result_array:
-            score += 1
-    
-    return score
-
 
 def run_speed_test(l, CPUs,weaviate_url):
     '''Runs the actual speed test in Go'''
@@ -78,43 +53,17 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
         'ef': ef,
         'efConstruction': efConstruction,
         'maxConnections': maxConnections,
-        'recall': {
-            '100': {
-                'highest': 0,
-                'lowest': 100,
-                'average': 0
-            },
-            '10': {
-                'highest': 0,
-                'lowest': 100,
-                'average': 0
-            },
-            '1': {
-                'highest': 0,
-                'lowest': 100,
-                'average': 0
-            },
-        },
         'requestTimes': {}
     }
 
     # update schema for ef setting
     loguru.logger.info('Update "ef" to ' + str(ef) + ' in schema')
     client.schema.update_config('Benchmark', { 'vectorIndexConfig': { 'ef': ef } })
-
-    ##
-    # Run the score test
-    ##
     c = 0
-    all_scores = {
-            '100':[],
-            '10':[],
-            '1': [],
-        }
-
     loguru.logger.info('Find neighbors with ef = ' + str(ef))
     print("file", benchmark_file[0])
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
+        tmp = []
         test_vectors = f['test']
         test_vectors_len = len(f['test'])
         for test_vector in test_vectors:
@@ -123,26 +72,16 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
             nearVector = { "vector": test_vector.tolist() }
             
             # Start request
-            query_result = client.query.get("Benchmark", ["counter"]).with_near_vector(nearVector).with_limit(100).do()    
-
-            for k in [1, 10,100]:
-                k_label=f'{k}'
-                score = match_results(f['neighbors'][c], query_result, k)
-                if score == 0:
-                    loguru.logger.info('There is a 0 score, this most likely means there is an issue with the dataset OR you have very low index settings. Found for vector: ' + str(test_vector[0]))
-                all_scores[k_label].append(score)
-                
-                # set if high and low score
-                if score > results['recall'][k_label]['highest']:
-                    results['recall'][k_label]['highest'] = score
-                if score < results['recall'][k_label]['lowest']:
-                    results['recall'][k_label]['lowest'] = score
-
+            query_result = client.query.get("Benchmark", ["counter"]).with_near_vector(nearVector).with_limit(10).do()    
+            inds = [x["counter"] for x in query_result["data"]["Get"]["Benchmark"]]
+            tmp.append(inds)
             # log ouput
             if (c % 1000) == 0:
                 loguru.logger.info('Validated ' + str(c) + ' of ' + str(test_vectors_len))
 
             c+=1
+        inds = np.array(tmp)
+        np.save(f"/results/test_inds_{ef}_{inds.shape}.npy")
 
     ##
     # Run the speed test
@@ -164,8 +103,8 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
     # add final results
     results['totalTested'] = c
     results['totalDatasetSize'] = train_vectors_len
-    for k in ['1', '10', '100']:
-        results['recall'][k]['average'] = sum(all_scores[k]) / len(all_scores[k])
+    # for k in ['1', '10', '100']:
+    #     results['recall'][k]['average'] = sum(all_scores[k]) / len(all_scores[k])
 
     return results
 
@@ -181,7 +120,7 @@ def remove_weaviate_class(client):
         remove_weaviate_class(client)
 
 
-def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file):
+def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file, curr, size):
     '''Imports the data into Weaviate'''
     
     # variables
@@ -189,43 +128,42 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
     benchmark_class = 'Benchmark'
     import_time = 0
 
-    # Delete schema if available
+    # TODO: "DO NOT" Delete schema if available
     current_schema = client.schema.get()
-    if len(current_schema['classes']) > 0:
+    if len(current_schema['classes']) > 0 and curr > 0:
         remove_weaviate_class(client)
-
-    # Create schema
-    schema = {
-        "classes": [{
-            "class": benchmark_class,
-            "description": "A class for benchmarking purposes",
-            "properties": [
-                {
-                    "dataType": [
-                        "int"
-                    ],
-                    "description": "The number of the couter in the dataset",
-                    "name": "counter"
+    else:
+        schema = {
+            "classes": [{
+                "class": benchmark_class,
+                "description": "A class for benchmarking purposes",
+                "properties": [
+                    {
+                        "dataType": [
+                            "int"
+                        ],
+                        "description": "The number of the couter in the dataset",
+                        "name": "counter"
+                    }
+                ],
+                "vectorIndexConfig": {
+                    "ef": -1,
+                    "efConstruction": efConstruction,
+                    "maxConnections": maxConnections,
+                    "vectorCacheMaxObjects": 1000000000,
+                    "distance": benchmark_file[1]
                 }
-            ],
-            "vectorIndexConfig": {
-                "ef": -1,
-                "efConstruction": efConstruction,
-                "maxConnections": maxConnections,
-                "vectorCacheMaxObjects": 1000000000,
-                "distance": benchmark_file[1]
-            }
-        }]
-    }
+            }]
+        }
 
-    client.schema.create(schema)
+        client.schema.create(schema)
 
     # Import
     loguru.logger.info('Start import process for ' + benchmark_file[0] + ', ef' + str(efConstruction) + ', maxConnections' + str(maxConnections))
     import os
     print("FUNC h5py", benchmark_file[0], os.listdir("/var/hdf5") )
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
-        vectors = f['train']
+        vectors = f['train'][curr:size]
         c = 0
         batch_c = 0
         vector_len = len(vectors)
@@ -248,7 +186,7 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
     return import_time
 
 
-def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array):
+def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array, size, increment, stop):
     '''Runs the actual benchmark.
        Results are stored in a JSON file'''
 
@@ -262,29 +200,31 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
     client.batch.configure(
         timeout_retries=10,
     )
+    curr = 0
 
     # itterate over settings
-    for benchmark_file in benchmark_file_array:
-        for efConstruction in efConstruction_array:
-            for maxConnections in maxConnections_array:
-               
-                # import data
-                print("before import", benchmark_file)
-                import_time = import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
-
-                # Find neighbors based on UUID and ef settings
-                results = []
-                for ef in ef_array:
-                    result = conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruction, maxConnections)
-                    result['importTime'] = import_time
-                    results.append(result)
-                
-                # write json file
-                if not os.path.exists('results'):
-                    os.makedirs('results')
-                output_json = 'results/weaviate_benchmark' + '__' + benchmark_file[0] + '__' + str(efConstruction) + '__' + str(maxConnections) + '.json'
-                loguru.logger.info('Writing JSON file with results to: ' + output_json)
-                with open(output_json, 'w') as outfile:
-                    json.dump(results, outfile)
+    efConstruction = efConstruction_array[0]
+    maxConnections = maxConnections_array[1]
+    benchmark_file = benchmark_file_array[0]
+    ef = ef_array[0]
+    while curr < stop:
+        # import data
+        print("before import", benchmark_file)
+        import_time = import_into_weaviate(client, efConstruction, maxConnections, benchmark_file, curr, size)
+        curr, size = size, size + increment
+        # Find neighbors based on UUID and ef settings
+        results = []
+        result = conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruction, maxConnections)
+        result['importTime'] = import_time
+        result["dataSize"] = curr
+        results.append(result)
+        
+        # write json file
+        if not os.path.exists('results'):
+            os.makedirs('results')
+        output_json = 'results/weaviate_benchmark' + '__' + benchmark_file[0] + '__' + str(efConstruction) + '__' + str(maxConnections) + '.json'
+        loguru.logger.info('Writing JSON file with results to: ' + output_json)
+        with open(output_json, 'w') as outfile:
+            json.dump(results, outfile)
 
     loguru.logger.info('completed')

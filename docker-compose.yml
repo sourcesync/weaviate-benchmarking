@@ -4,7 +4,7 @@ services:
   benchmark-ann:
     build: 
       context: ./
-      dockerfile: Dockerfile-ann
+      dockerfile: Dockerfile-ann-gsi
     volumes:
       - $PWD/benchmark-data:/var/hdf5
       - $PWD/results:/var/lib/benchmark/results
@@ -13,12 +13,12 @@ services:
     - --host
     - 0.0.0.0
     - --port
-    - '8080'
+    - '8084'
     - --scheme
     - http
     image: docker.io/semitechnologies/weaviate:1.13.2
     ports:
-      - 8080:8080
+      - 8084:8084
     volumes:
       - $PWD/weaviate-data:/var/lib/weaviate
     restart: on-failure:0

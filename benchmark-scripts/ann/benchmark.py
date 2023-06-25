@@ -9,7 +9,7 @@ if __name__ == '__main__':
     efConstruction_array = [64] #, 128]
     maxConnections_array = [16] #, 32]
     ef_array = [64, 128, 256, 512]
-    import_only=True
+    skip_graph=True
 
     benchmark_file_array = [
 #        ['deep-10K.hdf5','cosine'],
@@ -25,4 +25,4 @@ if __name__ == '__main__':
  
     # Starts the actual benchmark, prints "completed" when done
     print("Benchmark file array", benchmark_file_array)
-    run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array, import_only)
+    run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array, skip_graph)

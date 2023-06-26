@@ -4,7 +4,7 @@ import h5py
 import numpy as np
 
 # Path to the numpy base dataset
-NPY_PATH = "../../benchmark-data/deep-1M.npy"
+NPY_PATH = "../../benchmark-data/deep-20M.npy"
 
 start_time = datetime.datetime.now()
 

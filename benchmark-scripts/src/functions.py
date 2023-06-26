@@ -8,10 +8,16 @@ import h5py
 import weaviate
 import loguru
 
+# Config
+VectorCacheMaxObjects = 0
 
-def add_batch(client, c, vector_len):
+def add_batch(client, c, vector_len, skip_graph=False):
     '''Adds batch to Weaviate and returns
        the time it took to complete in seconds.'''
+    
+    if skip_graph:
+        print("Skipping add_batch - " + str(c) + ' of ' +str(vector_len) + " objects")
+        return 0
 
     start_time = datetime.datetime.now()
     results = client.batch.create_objects()
@@ -182,7 +188,7 @@ def remove_weaviate_class(client):
         remove_weaviate_class(client)
 
 
-def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file):
+def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file, skip_graph=False):
     '''Imports the data into Weaviate'''
     
     # variables
@@ -190,10 +196,13 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
     benchmark_class = 'Benchmark'
     import_time = 0
 
-    # Delete schema if available
-    current_schema = client.schema.get()
-    if len(current_schema['classes']) > 0:
-        remove_weaviate_class(client)
+    if skip_graph:
+        print("Skipping schema query...")
+    else:
+        # Delete schema if available
+        current_schema = client.schema.get()
+        if len(current_schema['classes']) > 0:
+            remove_weaviate_class(client)
 
     # Create schema
     schema = {
@@ -213,18 +222,20 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
                 "ef": -1,
                 "efConstruction": efConstruction,
                 "maxConnections": maxConnections,
-                "vectorCacheMaxObjects": 1000000000,
+                "vectorCacheMaxObjects": VectorCacheMaxObjects, #1000000000,
                 "distance": benchmark_file[1]
             }
         }]
     }
 
-    client.schema.create(schema)
+    if skip_graph:
+        print("Skipping schema create...")
+    else:
+        client.schema.create(schema)
 
     # Import
     loguru.logger.info('Start import process for ' + benchmark_file[0] + ', ef' + str(efConstruction) + ', maxConnections' + str(maxConnections))
     import os
-    print("FUNC h5py", benchmark_file[0], os.listdir("/var/hdf5") )
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
         vectors = f['train']
         c = 0
@@ -239,17 +250,17 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
                 vector = vector
             )
             if batch_c == benchmark_import_batch_size:
-                import_time += add_batch(client, c, vector_len)
+                import_time += add_batch(client, c, vector_len, skip_graph)
                 batch_c = 0
             c += 1
             batch_c += 1
-        import_time += add_batch(client, c, vector_len)
+        import_time += add_batch(client, c, vector_len, skip_graph)
     loguru.logger.info('done importing ' + str(c) + ' objects in ' + str(import_time) + ' seconds')
 
     return import_time
 
 
-def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array):
+def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array, skip_graph=False):
     '''Runs the actual benchmark.
        Results are stored in a JSON file'''
 
@@ -270,20 +281,33 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
             for maxConnections in maxConnections_array:
                
                 # import data
-                print("before import", benchmark_file)
-                import_time = import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
+                start_time = datetime.datetime.now()
+                import_time = import_into_weaviate(client, efConstruction, maxConnections, benchmark_file, skip_graph)
+                stop_time = datetime.datetime.now()
+                wall_time_import_time = stop_time - start_time
 
                 # Find neighbors based on UUID and ef settings
                 results = []
                 for ef in ef_array:
-                    result = conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruction, maxConnections)
+                    if skip_graph:
+                        result = {}
+                        print("Skipping benchmark...")
+                    else:
+                        result = conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruction, maxConnections)
                     result['importTime'] = import_time
+                    result['startTime'] = start_time.timestamp()
+                    result['wallImportTime'] = wall_time_import_time.seconds
+                    result['vectorCacheMaxObjects'] = VectorCacheMaxObjects 
                     results.append(result)
+                    if skip_graph: break
                 
                 # write json file
                 if not os.path.exists('results'):
                     os.makedirs('results')
-                output_json = 'results/weaviate_benchmark' + '__' + benchmark_file[0] + '__' + str(efConstruction) + '__' + str(maxConnections) + '.json'
+                if skip_graph:
+                    output_json = 'results/weaviate_benchmark' + '__' + benchmark_file[0] + '__skip_graph' + '.json'
+                else:
+                    output_json = 'results/weaviate_benchmark' + '__' + benchmark_file[0] + '__' + str(efConstruction) + '__' + str(maxConnections) + '.json'
                 loguru.logger.info('Writing JSON file with results to: ' + output_json)
                 with open(output_json, 'w') as outfile:
                     json.dump(results, outfile)

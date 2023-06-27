@@ -15,6 +15,19 @@ services:
     volumes:
       - $PWD/benchmark-data:/var/hdf5
       - $PWD/results:/var/lib/benchmark/results
+    network_mode: host
+    environment:
+      GEMINI_ALLOCATION_ID: 'fd283b38-3e4a-11eb-a205-7085c2c5e516' #APU12='0b391a1a-b916-11ed-afcb-0242ac1c0002'
+  sanity-gsi:
+    build:
+      context: ./
+      dockerfile: Dockerfile-sanity-gsi
+    volumes:
+      - /mnt/nas1/fvs_benchmark_datasets:/mnt/nas1/fvs_benchmark_datasets
+      - /home/public:/home/public
+    network_mode: host
+    environment:
+      GEMINI_ALLOCATION_ID: 'fd283b38-3e4a-11eb-a205-7085c2c5e516' #APU12='0b391a1a-b916-11ed-afcb-0242ac1c0002'
   weaviate:
     command:
     - --host
@@ -27,6 +40,7 @@ services:
     image: docker.io/semitechnologies/weaviate:1.19.8
     ports:
       - 8084:8084
+#    network_mode: host
     volumes:
       - $PWD/weaviate-data:/var/lib/weaviate
     restart: on-failure:0
@@ -38,5 +52,36 @@ services:
       DEFAULT_VECTORIZER_MODULE: 'none'
       ENABLE_MODULES: ''
       CLUSTER_HOSTNAME: 'benchmark_node'
-      DISK_USE_READONLY_PERCENTAGE: 95
+      DISK_USE_READONLY_PERCENTAGE: 97
+  weaviate-gsi:
+    command:
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8084'
+    - --scheme
+    - http
+    image: gsi/weaviate
+    ports:
+      - 8084:8084
+    volumes:
+#      - $PWD/weaviate-data:/var/lib/weaviate
+      - /var/lib/weaviate:/var/lib/weaviate
+      - /home/public:/home/public
+    restart: on-failure:0
+    environment:
+      GOGC: 800
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: ''
+      CLUSTER_HOSTNAME: 'benchmark_node'
+      DISK_USE_READONLY_PERCENTAGE: 97
+      DEFAULT_VECTOR_INDEX_TYPE: 'gemini'
+      GEMINI_ALLOCATION_ID: 'fd283b38-3e4a-11eb-a205-7085c2c5e516' #'APU12=0b391a1a-b916-11ed-afcb-0242ac1c0002' 
+      GEMINI_DATA_DIRECTORY: '/home/public' #'/var/lib/weaviate'
+      GEMINI_FVS_SERVER: 'localhost'
+      GEMINI_DEBUG: 'true'
+      GEMINI_MIN_RECORDS_CHECK: 'false'
 ...

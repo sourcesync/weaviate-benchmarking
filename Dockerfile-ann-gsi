@@ -1,36 +1,32 @@
-
-# GSI - alt base layer
-# GSI - FROM golang:alpine
+# FROM golang:alpine
 FROM frolvlad/alpine-miniconda3
-# GSI - alt base layer
 
-# GSI - alt go install
+# Install GO
 RUN apk update
 RUN apk add wget
 RUN wget https://dl.google.com/go/go1.20.5.linux-amd64.tar.gz
 RUN tar -C /usr/local -xzf go1.20.5.linux-amd64.tar.gz 
 ENV PATH=$PATH:/usr/local/go/bin
 RUN go version
-# GSI - alt go install
 
 WORKDIR /var/lib/benchmark
 
+# Config Python
 COPY benchmark-scripts/ann/requirements.txt /var/lib/benchmark/requirements.txt
-
-# GSI - alt python req
-# GSI - RUN apk update
-# GSI - RUN apk add make automake gcc g++ curl python3 python3-dev py3-numpy hdf5-dev && ln -sf python3 /usr/bin/python
-# GSI - RUN apk add make automake gcc g++ curl python3 python3-dev py3-numpy hdf5-dev && ln -sf python3 /usr/bin/python
-# GSI - RUN ln -s /usr/include/locale.h /usr/include/xlocale.h
 RUN python3 -m ensurepip
 RUN pip3 install --no-cache --upgrade pip setuptools
 RUN pip3 install -r requirements.txt
 RUN python3 -m pip install -r requirements.txt
 ENV PYTHONUNBUFFERED=1
-# GSI - alt python req
 
+# Gemini support
+COPY ./gsi/gemini.py ./
+COPY ./gsi/swagger_client ./swagger_client
+
+# Config GO benchmarker
 COPY ./benchmarker ./
 RUN go build -o benchmarker .
+
 CMD [ "python", "./benchmark.py" ]
 
 # copy benchmarking scripts last, so that when paramters are changed, the rest

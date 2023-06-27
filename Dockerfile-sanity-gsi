@@ -1,0 +1,34 @@
+FROM frolvlad/alpine-miniconda3
+
+# Install GO
+#RUN apk update
+#RUN apk add wget
+##RUN wget https://dl.google.com/go/go1.20.5.linux-amd64.tar.gz
+#RUN tar -C /usr/local -xzf go1.20.5.linux-amd64.tar.gz 
+#ENV PATH=$PATH:/usr/local/go/bin
+#RUN go version
+
+WORKDIR /var/lib/benchmark
+
+# Python config
+COPY gsi/requirements-sanity.txt /var/lib/benchmark/requirements.txt
+RUN python3 -m ensurepip
+RUN pip3 install --no-cache --upgrade pip setuptools
+RUN pip3 install -r requirements.txt
+RUN python3 -m pip install -r requirements.txt
+ENV PYTHONUNBUFFERED=1
+
+# Cppy files
+COPY ./gsi/gemini_fvs.py ./
+COPY ./gsi/swagger_client ./swagger_client
+COPY ./gsi/run_sanity_check_10K.sh ./
+
+ENV PATH="$PATH:/var/lib/benchmark"
+RUN echo $PATH
+RUN pwd && ls -als
+
+# Set the run script
+CMD [ "./run_sanity_check_10K.sh" ]
+
+
+

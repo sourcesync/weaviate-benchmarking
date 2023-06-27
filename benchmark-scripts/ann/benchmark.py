@@ -6,12 +6,16 @@ if __name__ == '__main__':
     # variables
     weaviate_url = 'http://weaviate:8084'
     CPUs = 32
-    efConstruction_array = [64, 128]
-    maxConnections_array = [16, 32]
+    efConstruction_array = [64]
+    maxConnections_array = [16]
     ef_array = [64, 128, 256, 512]
+    multi = True
+    start = 10000
+    stop = 100000
+    increment = 10000
 
     benchmark_file_array = [
-        ['deep-5M.hdf5','cosine']
+        ['deep-1M.hdf5','cosine']
 #        ['deep-image-96-angular.hdf5', 'cosine'],
 #        ['mnist-784-euclidean.hdf5', 'l2-squared'],
 #        ['gist-960-euclidean.hdf5', 'l2-squared'],
@@ -20,4 +24,4 @@ if __name__ == '__main__':
  
     # Starts the actual benchmark, prints "completed" when done
     #print("bm file", benchmark_file_array)
-    run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array)
+    run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array, multi, start, increment, stop)

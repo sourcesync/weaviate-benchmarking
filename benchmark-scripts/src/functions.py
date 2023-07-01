@@ -18,7 +18,7 @@ import gemini
 # You don't want a vector cache if you are benchmarking the vector search algorithm.
 VectorCacheMaxObjects = 0
 
-# Gemini index config ( 'nBits' should be the one you really care about )
+# Gemini index config ( 'nBits' and 'searchType should be the ones you really care about 
 GEMINI_PARAMETERS   = {'skip': False, 'searchType': 'flat', 'centroidsHammingK': 5000, 'centroidsRerank': 4000, 'hammingK': 3200, 'nBits': -1 }
 
 def add_batch(client, c, vector_len, skip_graph=False, verbose=True):
@@ -39,7 +39,7 @@ def add_batch(client, c, vector_len, skip_graph=False, verbose=True):
 
     if verbose: print("add_batch stats", run_time.total_seconds(), run_time.seconds)
 
-    return run_time.seconds
+    return run_time.total_seconds()
 
 
 def handle_results(results):
@@ -99,6 +99,7 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
             'distanceMetric': benchmark_file[1],
             'totalTested': 0,
             'nBits': gemini_parm['nBits'],
+            'searchType': gemini_parm['searchType'],
             'recall': {
                 '10': {
                     'highest': 0,
@@ -117,21 +118,11 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
             'efConstruction': efConstruction,
             'maxConnections': maxConnections,
             'recall': {
-    #            '100': {
-    #                'highest': 0,
-    #                'lowest': 100,
-    #                'average': 0
-    #            },
                 '10': {
                     'highest': 0,
                     'lowest': 100,
                     'average': 0
                 },
-    #            '1': {
-    #                'highest': 0,
-    #                'lowest': 100,
-    #                'average': 0
-    #            },
             },
             'requestTimes': {}
         }
@@ -143,14 +134,12 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
         print("Updating schema with ef", ef ) 
         client.schema.update_config('Benchmark', { 'vectorIndexConfig': { 'ef': ef } })
 
-    ##
+    #
     # Run the score test
-    ##
+    #
     c = 0
     all_scores = {
-#            '100':[],
             '10':[],
-##            '1': [],
         }
 
     loguru.logger.info('Find neighbors with ef = ' + str(ef))
@@ -168,9 +157,8 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
             else:
                 query_result = client.query.get("Benchmark", ["counter"]).with_near_vector(nearVector).with_limit(100).do()    
 
-            for k in [10]: #[1, 10,100]:
+            for k in [10]: 
                 k_label=f'{k}'
-                #print("k", f['neighbors'][c])
                 score = match_results(f['neighbors'][c], query_result, k)
                 if score == 0:
                     loguru.logger.info('There is a 0 score, this most likely means there is an issue with the dataset OR you have very low index settings. Found for vector: ' + str(test_vector[0]))
@@ -188,9 +176,9 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
 
             c+=1
 
-    ##
+    #
     # Run the speed test
-    ##
+    #
     loguru.logger.info('Run the speed test')
     train_vectors_len = 0
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
@@ -201,14 +189,12 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
             vector_write_array.append(vector.tolist())
         with open('queries.json', 'w', encoding='utf-8') as jf:
             json.dump(vector_write_array, jf, indent=2)
-        #results['requestTimes']['limit_1'] = run_speed_test(1, CPUs, weaviate_url)
         results['requestTimes']['limit_10'] = run_speed_test(10, CPUs, weaviate_url) #if False else -1
-        #results['requestTimes']['limit_100'] = run_speed_test(100, CPUs, weaviate_url)
 
     # add final results
     results['totalTested'] = c
     results['totalDatasetSize'] = train_vectors_len
-    for k in [ '10']: #['1', '10', '100']:
+    for k in [ '10']: 
         results['recall'][k]['average'] = sum(all_scores[k]) / len(all_scores[k])
 
     return results
@@ -240,7 +226,7 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file,
         benchmark_import_batch_size = 10000
 
     benchmark_class = 'Benchmark'
-    import_time = 0
+    import_time = 0.0
 
     if skip_graph:
         print("Skipping schema query...")
@@ -269,7 +255,7 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file,
                 "ef": -1,
                 "efConstruction": efConstruction,
                 "maxConnections": maxConnections,
-                "vectorCacheMaxObjects": VectorCacheMaxObjects, #1000000000,
+                "vectorCacheMaxObjects": VectorCacheMaxObjects,
                 "distance": benchmark_file[1]
             }
         }]
@@ -279,7 +265,12 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file,
         print("Skipping schema create...")
     else:
         if gemini_parm:
-            GEMINI_PARAMETERS['nBits'] = gemini_parm['nBits']
+            for ky in gemini_parm.keys():
+                if ky not in GEMINI_PARAMETERS.keys():
+                    raise Exception("Invalid Gemini parm=", ky)
+                else:
+                    print("Setting Gemini parm", ky, "to", gemini_parm[ky])
+                GEMINI_PARAMETERS[ky] = gemini_parm[ky]
             schema['classes'][0]['vectorIndexConfig'] = GEMINI_PARAMETERS
             schema['classes'][0]['vectorIndexType'] = "gemini"
             print("Setting APU/Gemini index config", schema['classes'][0]['vectorIndexConfig'])
@@ -314,7 +305,8 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file,
             if batch_c == benchmark_import_batch_size:
                 import_time += add_batch(client, c, vector_len, skip_graph, benchmark_import_batch_size>1)
                 batch_c = 0
-            if (c%1000)==0: print("Processed %d/%d vectors" % (c+1, vector_len))
+            if (c%1000)==0: 
+                print("Processed %d/%d vectors, add batch import time thus far=%f" % (c+1, vector_len,import_time ))
             c += 1
             batch_c += 1
         import_time += add_batch(client, c, vector_len, skip_graph, benchmark_import_batch_size>1)
@@ -404,7 +396,7 @@ def gemini_wait(client, benchmark_file):
         return -1
     else:
         print("gemini wait stats - ", gemini_train_time.total_seconds(), gemini_train_time.seconds)
-        return gemini_train_time.seconds
+        return gemini_train_time.total_seconds()
 
 def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array, skip_graph=False, gemini_parms=False):
     '''Runs the actual benchmark.
@@ -448,20 +440,22 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
                         result = conduct_benchmark(weaviate_url, CPU, None, client, benchmark_file, None, None, gemini_parm=gemini_parm)
                     result['importTime'] = import_time
                     result['startTime'] = start_time.timestamp()
-                    result['wallImportTime'] = wall_time_import_time.seconds
+                    result['wallImportTime'] = wall_time_import_time.total_seconds()
                     result['vectorCacheMaxObjects'] = VectorCacheMaxObjects 
                     result['trainTime'] = train_time
                     results.append(result)
-                    
+                    print("Dumping results->", results)
+             
                     # write json file
                     if not os.path.exists('results'):
                         os.makedirs('results')
                     if skip_graph:
                         output_json = 'results/weaviate_benchmark' + '__' + \
-                            benchmark_file[0] + '__skip_graph__' + str(gemini_parm['nBits']) + '__' + str(CPU) + '.json'
+                            benchmark_file[0] + '__skip_graph__gemini.json'
                     else:
                         output_json = 'results/weaviate_benchmark' + '__' + \
-                            benchmark_file[0] + '__' + "gemini" + '__' + str(gemini_parm['nBits']) + '__' + str(CPU) + '.json'
+                            benchmark_file[0] + '__' + "gemini" + '__' + \
+                                str(gemini_parm['nBits']) + '__' + str(gemini_parm['searchType']) + '__' + str(CPU) + '.json'
 
                     loguru.logger.info('Writing JSON file with results to: ' + output_json)
                     with open(output_json, 'w') as outfile:
@@ -491,7 +485,7 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
                                 result = conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruction, maxConnections)
                             result['importTime'] = import_time
                             result['startTime'] = start_time.timestamp()
-                            result['wallImportTime'] = wall_time_import_time.seconds
+                            result['wallImportTime'] = wall_time_import_time.total_seconds()
                             result['vectorCacheMaxObjects'] = VectorCacheMaxObjects 
                             result['trainTime'] = -1
                             results.append(result)

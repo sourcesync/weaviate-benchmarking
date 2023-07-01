@@ -14,9 +14,9 @@ if __name__ == '__main__':
     benchmark_file_array = [
 #        ['deep-10K.hdf5','cosine'],
 #        ['deep-1M.hdf5','cosine'],
-        ['deep-2M.hdf5','cosine'],
+#        ['deep-2M.hdf5','cosine'],
 #        ['deep-5M.hdf5','cosine'],
-#        ['deep-10M.hdf5','cosine'],
+        ['deep-10M.hdf5','cosine'],
 #        ['deep-image-96-angular.hdf5', 'cosine'],
 #        ['mnist-784-euclidean.hdf5', 'l2-squared'],
 #        ['gist-960-euclidean.hdf5', 'l2-squared'],
@@ -27,13 +27,22 @@ if __name__ == '__main__':
     skip_graph=False  
 
     # APU/Gemini config - set to 'None' for normal HNSW
-    ##gemini_parms = None
-    ##gemini_parms = [ {'nBits':768 } ] , {'nBits':512 }, {'nBits':256 }, {'nBits':128 }, {'nBits':64 } ]
-    gemini_parms = [ {'nBits':128 }, {'nBits':64 } ]
+    # gemini_parms = None
+    gemini_parms = [    #{'nBits':768, 'searchType':'clusters'  },\
+                        #{'nBits':512, 'searchType':'clusters' }, \
+                        #{'nBits':256, 'searchType':'clusters' }, \
+                        {'nBits':128, 'searchType':'clusters' }, \
+                        {'nBits':64,  'searchType':'clusters' } ]
+#    gemini_parms = [    {'nBits':768, 'searchType':'flat'  },\
+#                        {'nBits':512, 'searchType':'flat' }, \
+#                        {'nBits':256, 'searchType':'flat' }, \
+#                        {'nBits':128, 'searchType':'flat' }, \
+#                        {'nBits':64,  'searchType':'flat' } ]
+    
     
     # Please don't change these unless you know what you are doing.
     if gemini_parms:
-        CPUs = [1, 16, 32]
+        CPUs = [1 ] #, 16, 32]
         efConstruction_array = None 
         maxConnections_array = None
         ef_array = None
@@ -47,7 +56,7 @@ if __name__ == '__main__':
     # Change this to the same container/port you've configured in the docker-compose file
     if gemini_parms:
         #weaviate_url = 'http://weaviate-gsi:8084'
-        weaviate_url = 'http://localhost:8091'
+        weaviate_url = 'http://localhost:8084'
     else:
         #weaviate_url = 'http://weaviate:8084'
         weaviate_url = 'http://localhost:8091'
